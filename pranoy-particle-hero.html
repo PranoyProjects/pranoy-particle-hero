@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pranoy</title>
+<style>
+  :root {
+    --bg: #05010d;
+    color-scheme: dark;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* The hero is dark by design, so both themes resolve to the same token. */
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #05010d; } }
+  :root[data-theme="dark"] { --bg: #05010d; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  html, body { height: 100%; margin: 0; background: var(--bg); overflow: hidden; }
+
+  /* Hero container. The engine injects 3 stacked canvases: background, particles, bloom.
+     To embed in a scrolling site, change position:fixed → position:relative; height:100vh. */
+  #hero { position: fixed; inset: 0; overflow: hidden; touch-action: none; }
+  /* Canvases may render below screen resolution; width/height 100% upscales them smoothly. */
+  #hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #hero .pt-bg { z-index: 0; }
+  #hero .pt-video { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; opacity: .62; display: none; pointer-events: none; }
+  #hero .pt-video.pt-video-on { display: block; }
+  #hero .pt-fx, #hero .pt-glow { z-index: 2; }
+  #pt-multi-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+  .pt-multi-text { position: absolute; transform: translate(-50%, -50%); color: rgba(255,238,220,.86); font: 700 clamp(14px, 2vw, 28px)/1 system-ui, sans-serif;
+    letter-spacing: .18em; text-transform: uppercase; text-shadow: 0 0 18px rgba(255,112,45,.75); white-space: nowrap; pointer-events: auto; cursor: grab; user-select: none; }
+  .pt-multi-text:active { cursor: grabbing; }
+  #hero .pt-bg   { animation: pt-breathe 9s ease-in-out infinite alternate; }
+  /* BATTERY: freeze the slow background "breathe" while particles are idle or paused.
+     Even a compositor-only animation makes the GPU re-blend every full-screen layer
+     (including the screen-blended bloom) 60 times a second, so the GPU never sleeps. */
+  #hero.pt-still .pt-bg { animation-play-state: paused; }
+  /* Bloom: a 1/4-size copy of the particle layer, blurred + brightened, screen-blended.
+     JS bakes the blur into that small canvas (cheap) and sets filter:none inline;
+     this CSS filter is only the fallback for browsers without canvas filters. */
+  #hero .pt-glow { pointer-events: none; mix-blend-mode: screen; filter: blur(10px) brightness(2.2) saturate(1.6); opacity: 1; }
+  @keyframes pt-breathe { from { opacity: .75; transform: scale(1); } to { opacity: 1; transform: scale(1.04); } }
+  @media (prefers-reduced-motion: reduce) { #hero .pt-bg { animation: none; } }
+
+  /* Settings panel: lives outside #hero so using it never scatters particles */
+  .pt-toggle { position: fixed; right: 17px; bottom: calc(17px + env(safe-area-inset-bottom, 0px)); z-index: 5;
+    width: 50px; height: 50px; border-radius: 50%; border: 2px solid rgba(255,255,255,.92);
+    background: #fff; color: #120b1d; font-size: 19px; line-height: 1; cursor: pointer; box-shadow: 0 0 0 5px rgba(255,255,255,.08), 0 0 28px rgba(255,255,255,.42);
+    transition: transform .25s, box-shadow .25s; }
+  .pt-toggle:hover { transform: scale(1.08); box-shadow: 0 0 0 7px rgba(255,255,255,.1), 0 0 36px rgba(255,255,255,.62); }
+  .pt-toggle::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #120b1d; box-shadow: 0 0 0 4px rgba(18,11,29,.12); }
+  .pt-toggle[aria-expanded="true"] { transform: rotate(90deg); }
+  .pt-panel { position: fixed; right: 16px; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); z-index: 3;
+    width: min(342px, calc(100vw - 32px)); max-height: min(78vh, 620px); overflow: auto; padding: 16px; border-radius: 18px; box-sizing: border-box;
+    background: rgba(12,4,22,.9); border: 1px solid rgba(255,140,60,.25); color: #f3e6ff;
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; display: grid; gap: 12px; }
+  .pt-panel[hidden] { display: none; }
+  .pt-panel h3 { margin: 0; color: #fff; font: 700 17px/1.1 Georgia, serif; }
+  .pt-panel .pt-kicker { margin: -6px 0 1px; color: #ffb27a; font-size: 10px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+  .pt-panel label { display: grid; gap: 6px; font-size: 12px; color: #cdb8e0; }
+  .pt-panel input[type=text] { padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,.2);
+    background: rgba(255,255,255,.06); color: #fff; font: inherit; }
+  .pt-panel input[type=range] { accent-color: #ff8a3c; }
+  .pt-row { display: flex; gap: 8px; }
+  .pt-range-row { display: grid; grid-template-columns: 1fr 48px; gap: 9px; align-items: center; }
+  .pt-range-row output { color: #ffcfad; font: 11px ui-monospace, monospace; text-align: right; }
+  .pt-effect-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .pt-effect { min-height: 34px; padding: 6px 4px; border-radius: 8px; border: 1px solid rgba(255,255,255,.13); background: rgba(255,255,255,.045);
+    color: #d9c9e8; font: 11px/1.05 system-ui, sans-serif; cursor: pointer; }
+  .pt-effect:hover, .pt-effect[aria-pressed="true"] { border-color: #ff9d62; background: rgba(255,125,45,.18); color: #fff1e4; }
+  .pt-section { display: grid; gap: 8px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,.1); }
+  .pt-section-title { color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .pt-multi-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+  .pt-multi-row input { min-width: 0; padding: 7px 8px; border: 1px solid rgba(255,255,255,.18); border-radius: 6px; background: rgba(255,255,255,.06); color: #fff; font: 12px system-ui, sans-serif; }
+  .pt-multi-row button { flex: initial; padding: 6px 8px; font-size: 11px; }
+  .pt-file-label { display: block; padding: 9px 10px; border: 1px dashed rgba(255,176,122,.5); border-radius: 8px; color: #ffd5bb; text-align: center; cursor: pointer; }
+  .pt-file-label:hover { background: rgba(255,125,45,.12); }
+  .pt-panel button { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid rgba(255,140,60,.4);
+    background: rgba(255,120,40,.15); color: #ffd2b0; font: inherit; cursor: pointer; }
+  .pt-note { margin: 0; font-size: 12px; color: #ffb27a; }
+  .pt-note:empty { display: none; }
+  .pt-panel :focus-visible, .pt-toggle:focus-visible { outline: 2px solid #8fd0ff; outline-offset: 2px; }
+
+  /* Editorial overlay: stays above the particle field without adding another animated layer. */
+  .pt-brand { position: fixed; top: calc(22px + env(safe-area-inset-top, 0px)); left: 24px; z-index: 2;
+    display: inline-flex; align-items: center; gap: 10px; color: #f7ecff; font: 700 12px/1 system-ui, sans-serif;
+    letter-spacing: .2em; text-transform: uppercase; }
+  .pt-brand-mark { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid rgba(255,165,92,.7);
+    border-radius: 9px; color: #ffb27a; font: 800 14px/1 Georgia, serif; box-shadow: 0 0 22px rgba(255,96,34,.18); }
+  @media (max-width: 640px) {
+    .pt-brand { top: calc(16px + env(safe-area-inset-top, 0px)); left: 16px; }
+  }
+
+  /* Music toggle: same look as ⚙, placed to its left.
+     No backdrop-filter on purpose: it would re-blur the animated backdrop every frame (GPU cost). */
+  .pt-music { position: fixed; right: 68px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 3;
+    width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255,140,60,.4);
+    background: rgba(5,1,13,.7); color: #ffb27a; cursor: pointer; padding: 0;
+    display: grid; place-items: center; }
+  .pt-music[hidden] { display: none; }
+  .pt-music svg { width: 20px; height: 20px; }
+  .pt-music[aria-pressed="true"] .ico-off, .pt-music[aria-pressed="false"] .ico-on { display: none; }
+  .pt-music:focus-visible { outline: 2px solid #8fd0ff; outline-offset: 2px; }
+
+  /* Dev-only FPS counter: add ?fps=1 to the URL (or #fps where query strings are stripped) */
+  .pt-fps { position: fixed; top: calc(8px + env(safe-area-inset-top, 0px)); left: 8px; z-index: 4;
+    padding: 4px 8px; border-radius: 4px; background: rgba(0,0,0,.65); color: #d8f5e0;
+    font: 12px/1.3 ui-monospace, SFMono-Regular, Consolas, monospace; pointer-events: none; }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<section id="hero">
+  <h1 class="sr-only">Pranoy</h1>
+  <video id="pt-video" class="pt-video" muted loop playsinline preload="metadata" aria-hidden="true"></video>
+  <div id="pt-multi-layer" aria-live="polite"></div>
+</section>
+<div class="pt-brand" aria-label="P Lab"><span class="pt-brand-mark" aria-hidden="true">P</span><span>Lab</span></div>
+
+<button class="pt-music" type="button" aria-label="Toggle music" aria-pressed="false" hidden>
+  <svg class="ico-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/>
+  </svg>
+  <svg class="ico-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>
+  </svg>
+</button>
+<!-- preload="none": the track downloads only when the user turns music on -->
+<audio id="pt-audio" loop preload="none"></audio>
+
+<button class="pt-toggle" type="button" aria-label="Open creative controls" aria-expanded="false" aria-controls="pt-panel"></button>
+<div class="pt-panel" id="pt-panel" hidden>
+  <h3>Creative controls</h3>
+  <p class="pt-kicker">12 motion studies · live preview</p>
+  <label>Name
+    <input type="text" id="pt-name" maxlength="16" autocomplete="off" spellcheck="false">
+  </label>
+  <div class="pt-section">
+    <span class="pt-section-title">Text effects</span>
+    <div class="pt-effect-grid" id="pt-effects" role="group" aria-label="Text effects"></div>
+  </div>
+  <label>Letter reveal speed
+    <div class="pt-range-row"><input type="range" id="pt-reveal" min="8" max="110" step="1" value="50"><output id="pt-reveal-out">50</output></div>
+  </label>
+  <div class="pt-section">
+    <span class="pt-section-title">Move text</span>
+    <div class="pt-range-row"><label>X position<input type="range" id="pt-pos-x" min="-35" max="35" step="1" value="0"></label><output id="pt-pos-x-out">0%</output></div>
+    <div class="pt-range-row"><label>Y position<input type="range" id="pt-pos-y" min="-35" max="35" step="1" value="0"></label><output id="pt-pos-y-out">0%</output></div>
+    <button type="button" id="pt-drag-mode">Enable drag mode</button>
+  </div>
+  <label>Photo dimming
+    <input type="range" id="pt-dim" min="0.3" max="0.95" step="0.05">
+  </label>
+  <div class="pt-row">
+    <button type="button" id="pt-pick">Add photo</button>
+    <button type="button" id="pt-clear">Remove photo</button>
+  </div>
+  <div class="pt-section">
+    <span class="pt-section-title">Soundtrack</span>
+    <label class="pt-file-label" for="pt-audio-file">Attach MP3 / audio file</label>
+    <input type="file" id="pt-audio-file" accept="audio/mpeg,audio/ogg,audio/wav,audio/*" hidden>
+  </div>
+  <div class="pt-section">
+    <span class="pt-section-title">Extra texts</span>
+    <div id="pt-multi-controls"></div>
+    <button type="button" id="pt-add-text">＋ Add text layer</button>
+  </div>
+  <div class="pt-section">
+    <span class="pt-section-title">Video atmosphere</span>
+    <label class="pt-file-label" for="pt-video-file">Attach any video</label>
+    <input type="file" id="pt-video-file" accept="video/*" hidden>
+    <button type="button" id="pt-clear-video">Remove video</button>
+  </div>
+  <p class="pt-note" id="pt-note" role="status"></p>
+  <input type="file" id="pt-file" accept="image/*" hidden>
+</div>
+
+<script>
+/* ======================= BACKGROUND MUSIC SOURCE ======================= */
+const AUDIO_SRC = ''; // ← paste your .mp3 / .ogg URL here (empty = music button hidden)
+
+/* =====================================================================
+   ParticleText — reusable fiery particle-text engine (no libraries).
+   Usage:  const hero = ParticleText.init({ area: '#hero', text: 'PRANOY' });
+           hero.setText('LOKI');   // particles morph to the new word
+           hero.setImage(url);     // photo behind the particles (null removes it)
+           hero.setImageDim(0.7);  // dark veil over the photo: 0 = full photo, 1 = hidden
+           hero.destroy();         // remove canvases + listeners
+   Change OPTIONS, not the engine, for new projects.
+   ===================================================================== */
+const ParticleText = (() => {
+  'use strict';
+
+  const DEFAULTS = {
+    area: '#hero',
+    text: 'PRANOY',
+    font: '900 {size}px "Arial Black", "Segoe UI Black", "Helvetica Neue", Arial, sans-serif',
+    letterSpacing: 0.04,      // extra gap between letters, as a fraction of font size
+    maxTextWidth: 0.86,       // word never wider than 86% of the container
+    maxTextHeight: 0.34,      // font size cap relative to container height
+    maxParticles: 6000,       // BATTERY: desktop budget at 1440×900 (was 9000); fewer particles = less CPU/frame
+    maxParticlesMobile: 3000, // BATTERY: hard cap on touch devices
+    densityRef: 9000,         // budget the look was designed at: sparser budgets get proportionally
+                              // thicker strokes so total brightness stays the same
+    edgeEmberChance: 0.45,    // share of edge pixels that become orange/red embers
+    innerEmberChance: 0.05,   // share of interior pixels that become embers
+    haloChance: 0.3,          // extra embers floating just outside the letter edges
+    sparkCount: 110,          // free embers that rise off the text
+    bgColor: '#05010d',
+    image: null,              // optional background photo URL (data: URL in published pages)
+    imageDim: 0.7,            // opacity of the dark veil over the photo
+    seed: 11,                 // background layout seed (stable across resizes)
+    effectMode: 'ember',      // selected motion study
+    textOffsetX: 0,           // percentage of viewport width
+    textOffsetY: 0,           // percentage of viewport height
+
+    // ---------- Battery / GPU budget ----------
+    maxDPR: 1.25,             // pixel-density cap; on 2× screens this alone renders ~2.5× fewer pixels
+    fxScale: 0.6,             // particle canvas resolution vs. screen; CSS upscales it (particles are soft anyway)
+    fxScaleMin: 0.45,         // used automatically when frames stay slow
+    bloom: { blur: 10, brightness: 2.2, saturate: 1.6,   // wide glow (same values as the old CSS filter)
+             halo: 4, haloAlpha: 1 },                    // tight halo that replaces the old per-particle shadowBlur
+    lowPowerFps: 30,          // frame cap on low-power devices
+    idleDelay: 500,           // ms of stillness before rendering stops completely
+    cursorRest: 3000,         // a cursor parked this long stops repelling, so the swirl around it can settle
+    idleFps: 0,               // 0 = freeze when settled (≈0% GPU); e.g. 8 keeps a faint shimmer at ~1/8 cost
+    forceFullRate: false,     // true = never throttle (testing)
+    showFps: false,           // dev FPS counter
+
+    colors: {                 // particle colour + line width (CSS px)
+      coreWhite:   { rgb: [255, 255, 255], width: 1.5 },
+      coreBlue:    { rgb: [170, 215, 255], width: 1.3 },
+      emberOrange: { rgb: [255, 135, 40],  width: 1.7 },
+      emberRed:    { rgb: [255, 55, 25],   width: 1.5 },
+      spark:       { rgb: [255, 185, 90],  width: 1.2 },
+    },
+    levels: [0.35, 0.7, 1], // alpha of the 3 flicker brightness levels
+    intro: { sweep: 50, jitter: 30, curl: 14 },  // frames of left→right stagger, sideways launch kick
+    physics: {
+      spring: [0.0045, 0.013], // per-particle stiffness range: pull toward home each frame
+      friction: 0.86,          // fraction of velocity kept per 60fps frame (lower = more drag)
+      mouseRadius: 0.8,        // repulsion radius as a fraction of font size (clamped 70–200px)
+      mouseForce: 5,           // peak push per frame right under the cursor
+      swirl: 0.35,             // tangential push → particles curl around the cursor like flame
+      emberLightness: 1.5,     // embers are "lighter": pushed 1.5× harder than core dust
+      maxSpeed: 60,            // px/frame speed cap
+      streak: 2.4,             // motion-tail length per unit of speed
+      maxStreak: 30,           // longest tail, px
+    },
+  };
+
+  // One-level deep merge so callers can override e.g. physics.friction alone.
+  const merge = (a, b = {}) => {
+    const o = { ...a, ...b };
+    for (const k in a) if (a[k] && typeof a[k] === 'object' && !Array.isArray(a[k]) && b[k]) o[k] = { ...a[k], ...b[k] };
+    return o;
+  };
+  // Small seeded PRNG (mulberry32) so the background looks the same after each resize.
+  const prng = seed => () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  function init(opts) {
+    const cfg = merge(DEFAULTS, opts);
+    const P = cfg.physics, B = cfg.bloom;
+    const area = typeof cfg.area === 'string' ? document.querySelector(cfg.area) : cfg.area;
+    const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const coarse = matchMedia('(pointer: coarse)').matches;
+
+    // ---------- Layers ----------
+    const layer = cls => {
+      const c = document.createElement('canvas');
+      c.className = cls; c.setAttribute('aria-hidden', 'true');
+      area.appendChild(c); return c;
+    };
+    const bg = layer('pt-bg'), fx = layer('pt-fx'), glow = layer('pt-glow');
+    const bgCtx = bg.getContext('2d'), ctx = fx.getContext('2d'), glowCtx = glow.getContext('2d');
+    const off = document.createElement('canvas');                       // offscreen text mask
+    const offCtx = off.getContext('2d', { willReadFrequently: true });
+
+    // BATTERY: bake the bloom blur into the quarter-size glow canvas instead of CSS.
+    // A CSS blur is applied to the upscaled, full-screen layer (every device pixel, every frame);
+    // the canvas filter blurs 1/16 of the pixels. Same look: blur radius is divided by 4 to match.
+    const bakeBloom = typeof glowCtx.filter === 'string';
+    const bloomFilter = blur => `blur(${blur}px) brightness(${B.brightness}) saturate(${B.saturate})`;
+    glow.style.filter = bakeBloom ? 'none' : bloomFilter(B.blur);
+    const wideFilter = bloomFilter(B.blur / 4), haloFilter = bloomFilter(B.halo / 4);   // canvas px = CSS px / 4
+
+    // ---------- Draw styles ----------
+    // Every particle falls into one bucket (colour × brightness level); each bucket is one
+    // Path2D stroked once per frame. BATTERY: no shadowBlur here any more; per-stroke shadow
+    // blur was the #1 GPU cost. The halo now comes only from the bloom layer.
+    const C = {};
+    Object.keys(cfg.colors).forEach((k, i) => (C[k] = i));
+    const STYLES = [];
+    for (const k of Object.keys(cfg.colors)) {
+      const { rgb, width } = cfg.colors[k];
+      cfg.levels.forEach(a => STYLES.push({ stroke: `rgba(${rgb},${a})`, width }));
+    }
+    const paths = new Array(STYLES.length);
+
+    // ---------- State ----------
+    let W = 0, H = 0, DPR = 1, fontSize = 100, fxScale = cfg.fxScale, scaleDrops = 0, lineComp = 1;
+    let particles = [], emberIdx = [], sparks = [];
+    let R = 100, R2 = 1e4, time = 0, last = 0, avgMs = 16.7, raf = 0, resizeTimer = 0, idleTimer = 0;
+    let lastTick = 0, lastRender = 0, lastMovement = 0, lastPointer = 0, laggySince = 0, slowSince = 0, fastSince = 0;
+    let idle = false, paused = false, destroyed = false, framesThisSecond = 0;
+    // BATTERY: on low-power hardware draw at 30fps. Starts true for ≤4 cores or touch devices,
+    // and switches on later if frames stay slow (see adapt()).
+    let lowPower = !cfg.forceFullRate && ((navigator.hardwareConcurrency || 8) <= 4 || coarse);
+    const pauseReasons = new Set();
+    const mouse = { x: 0, y: 0, active: false };
+    let bgImg = null;
+
+    // ---------- Sizing ----------
+    function resize() {
+      DPR = Math.min(window.devicePixelRatio || 1, cfg.maxDPR);
+      W = area.clientWidth; H = area.clientHeight;
+      bg.width = Math.round(W * DPR); bg.height = Math.round(H * DPR);
+      sizeFx();
+      // Bloom buffer at 1/4 of CSS size (≤ 0.25 × DPR device pixels): blur hides the low resolution.
+      glow.width = Math.max(1, Math.round(W / 4));
+      glow.height = Math.max(1, Math.round(H / 4));
+      drawBackground();   // background is drawn ONLY here (and on photo/dim change), never per frame
+    }
+    // BATTERY: particle canvas renders at fxScale × DPR (0.6 → 36% of the pixels of full res).
+    function sizeFx() {
+      const s = fxScale * DPR;
+      fx.width = Math.max(1, Math.round(W * s)); fx.height = Math.max(1, Math.round(H * s));
+    }
+
+    // ---------- Background: dark field, warm streaks, lens flares (cached bitmap) ----------
+    function drawBackground() {
+      const g = bgCtx, rnd = prng(cfg.seed), r = (a, b) => a + rnd() * (b - a);
+      const big = Math.max(W, H), small = Math.min(W, H);
+      g.setTransform(DPR, 0, 0, DPR, 0, 0);
+      g.globalCompositeOperation = 'source-over';
+      g.shadowBlur = 0;
+      g.fillStyle = cfg.bgColor;
+      g.fillRect(0, 0, W, H);
+
+      // Optional photo: cover-fit (fills the screen, crops overflow), then a dark veil
+      // so the glowing text keeps contrast. Drawn once per resize, not per frame.
+      if (bgImg) {
+        const s = Math.max(W / bgImg.width, H / bgImg.height);
+        const iw = bgImg.width * s, ih = bgImg.height * s;
+        g.drawImage(bgImg, (W - iw) / 2, (H - ih) / 2, iw, ih);
+        g.fillStyle = `rgba(5,1,13,${cfg.imageDim})`;
+        g.fillRect(0, 0, W, H);
+      }
+      g.globalCompositeOperation = 'lighter';
+
+      const blob = (x, y, rad, color) => {
+        const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+        gr.addColorStop(0, color); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+      };
+      // Faint warm/violet washes
+      blob(W * 0.15, H * 0.2, big * 0.55, 'rgba(255,45,20,0.09)');
+      blob(W * 0.88, H * 0.82, big * 0.5, 'rgba(255,110,30,0.07)');
+      blob(W * 0.5, H * 0.5, big * 0.45, 'rgba(80,30,150,0.07)');
+
+      // Anamorphic flare: radial gradient squashed into a thin horizontal line behind the word
+      g.save(); g.translate(W / 2, H / 2); g.scale(1, 0.014);
+      blob(0, 0, W * 0.6, 'rgba(255,110,50,0.28)');
+      g.restore();
+
+      // Diagonal light streaks, fading at both ends (shadowBlur is fine here: drawn once per resize)
+      for (let i = 0; i < 9; i++) {
+        const ang = r(-0.55, -0.2), len = r(0.3, 0.9) * W;
+        const cx = r(0, W), cy = r(0, H);
+        const dx = (Math.cos(ang) * len) / 2, dy = (Math.sin(ang) * len) / 2;
+        const col = `255,${r(45, 130) | 0},${r(10, 40) | 0}`;
+        const lg = g.createLinearGradient(cx - dx, cy - dy, cx + dx, cy + dy);
+        lg.addColorStop(0, `rgba(${col},0)`);
+        lg.addColorStop(0.5, `rgba(${col},${r(0.05, 0.16).toFixed(3)})`);
+        lg.addColorStop(1, `rgba(${col},0)`);
+        g.strokeStyle = lg; g.lineWidth = r(0.6, 2.4);
+        g.shadowColor = `rgba(${col},0.5)`; g.shadowBlur = 14 * DPR;
+        g.beginPath(); g.moveTo(cx - dx, cy - dy); g.lineTo(cx + dx, cy + dy); g.stroke();
+      }
+      g.shadowBlur = 0;
+
+      // Lens-flare ghosts on a line from a virtual light source through the centre
+      const sx = W * 0.1, sy = H * 0.15;
+      blob(sx, sy, small * 0.25, 'rgba(255,90,40,0.10)');
+      [0.4, 0.7, 1.3, 1.6, 1.9].forEach(t => {
+        blob(sx + (W / 2 - sx) * t, sy + (H / 2 - sy) * t, small * r(0.02, 0.09),
+          `rgba(255,${r(60, 140) | 0},${r(30, 90) | 0},${r(0.03, 0.07).toFixed(3)})`);
+      });
+
+      // Floating dust
+      for (let i = 0; i < 240; i++) {
+        g.fillStyle = `rgba(255,${r(120, 220) | 0},${r(120, 200) | 0},${r(0.03, 0.16).toFixed(3)})`;
+        g.fillRect(r(0, W), r(0, H), r(0.4, 1.3), r(0.4, 1.3));
+      }
+
+      // Vignette
+      g.globalCompositeOperation = 'source-over';
+      const vg = g.createRadialGradient(W / 2, H / 2, small * 0.3, W / 2, H / 2, Math.hypot(W, H) * 0.6);
+      vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.7)');
+      g.fillStyle = vg; g.fillRect(0, 0, W, H);
+    }
+
+    // ---------- Steps 1–2: render text offscreen, scan pixels → target points ----------
+    function buildTargets() {
+      const chars = [...cfg.text];
+      if (!chars.length || !W || !H) return [];
+      off.width = W; off.height = H;                      // also resets offCtx state
+      const measure = s => {
+        offCtx.font = cfg.font.replace('{size}', s.toFixed(1));
+        return chars.reduce((sum, ch) => sum + offCtx.measureText(ch).width, 0)
+             + s * cfg.letterSpacing * (chars.length - 1);
+      };
+      // Fit: start from a height-based size, shrink if the word is too wide
+      let size = H * cfg.maxTextHeight, total = measure(size);
+      if (total > W * cfg.maxTextWidth) { size *= (W * cfg.maxTextWidth) / total; total = measure(size); }
+      fontSize = size;
+
+      const m = offCtx.measureText(cfg.text);
+      const asc = m.actualBoundingBoxAscent || size * 0.72, desc = m.actualBoundingBoxDescent || 0;
+      const baseY = H / 2 + (asc - desc) / 2;             // centre the glyph box, not the em box
+      offCtx.fillStyle = '#fff';
+      let x = (W - total) / 2;
+      for (const ch of chars) { offCtx.fillText(ch, x, baseY); x += offCtx.measureText(ch).width + size * cfg.letterSpacing; }
+
+      // Scan only the text's bounding box
+      const pad = Math.ceil(size * 0.15);
+      const bx = Math.max(0, Math.floor((W - total) / 2 - pad));
+      const by = Math.max(0, Math.floor(baseY - asc - pad));
+      const bw = Math.min(W, Math.ceil((W + total) / 2 + pad)) - bx;
+      const bh = Math.min(H, Math.ceil(baseY + desc + pad)) - by;
+      if (bw <= 0 || bh <= 0) return [];
+      const data = offCtx.getImageData(bx, by, bw, bh).data;
+      const A = (px, py) => (px < 0 || py < 0 || px >= bw || py >= bh) ? 0 : data[(py * bw + px) * 4 + 3];
+
+      // Pick a sampling gap that keeps the particle count within budget.
+      // The area factor shrinks the budget on small screens; the mobile cap is applied AFTER it,
+      // so phones keep their density (gap stays ≥ 2 there) while tablets are capped at 3000.
+      let filled = 0;
+      for (let i = 3; i < data.length; i += 4) if (data[i] > 127) filled++;
+      const areaFactor = Math.min(1, Math.max(0.3, (W * H) / (1440 * 900)));
+      const budget = Math.min(coarse ? cfg.maxParticlesMobile : cfg.maxParticles, cfg.maxParticles * areaFactor);
+      const gap = Math.max(2, Math.round(Math.sqrt(filled / (budget * 0.85))));
+      const refGap = Math.max(2, Math.round(Math.sqrt(filled / (cfg.densityRef * areaFactor * 0.85))));
+      lineComp = gap / refGap;                             // e.g. gap 5 vs 4 → strokes 1.25× wider
+      const e = Math.max(2, Math.round(gap * 1.2));        // edge probe distance
+      const haloR = size * 0.06;
+      const pick = (a, b, chance) => (Math.random() < chance ? a : b);
+
+      const out = [];
+      for (let y = 0; y < bh; y += gap) {
+        for (let x2 = 0; x2 < bw; x2 += gap) {
+          // Jitter inside each grid cell → organic dust, no visible grid
+          const sx = x2 + ((Math.random() * gap) | 0), sy = y + ((Math.random() * gap) | 0);
+          if (A(sx, sy) < 128) continue;
+          // Edge pixel = some neighbour is outside the glyph
+          const edge = A(sx - e, sy) < 128 || A(sx + e, sy) < 128 || A(sx, sy - e) < 128 || A(sx, sy + e) < 128;
+          const px = bx + sx + (cfg.textOffsetX / 100) * W, py = by + sy + (cfg.textOffsetY / 100) * H;
+          const ember = Math.random() < (edge ? cfg.edgeEmberChance : cfg.innerEmberChance);
+          out.push({
+            x: px, y: py, ember, halo: false,
+            // White-hot interior, light-blue rim, orange/red embers on the edge
+            color: ember ? pick(C.emberOrange, C.emberRed, 0.6) : pick(C.coreBlue, C.coreWhite, edge ? 0.55 : 0.2),
+          });
+          if (edge && Math.random() < cfg.haloChance) {
+            const a = Math.random() * Math.PI * 2, rr = haloR * (0.3 + Math.random());
+            out.push({ x: px + Math.cos(a) * rr, y: py + Math.sin(a) * rr, ember: true, halo: true,
+                       color: pick(C.emberOrange, C.emberRed, 0.5) });
+          }
+        }
+      }
+      return out;
+    }
+
+    // ---------- Step 3: particle objects ----------
+    function makeParticle(x, y) {
+      const [k0, k1] = P.spring, a = Math.random() * Math.PI, len = 0.4 + Math.random() * 1.4;
+      return {
+        x, y, vx: 0, vy: 0, hx: x, hy: y,
+        k: k0 + Math.random() * (k1 - k0),        // spring stiffness: higher = snaps home faster
+        ph: Math.random() * Math.PI * 2,           // phase offset for wobble/flicker
+        ws: 0.6 + Math.random() * 1.4,             // wobble/flicker speed
+        cx: Math.cos(a) * len, cy: Math.sin(a) * len, // resting sliver shape (dust streak)
+        delay: 0, curl: 0, color: 0, ember: false, wob: 0, push: 1,
+      };
+    }
+    function assign(p, t) {
+      p.hx = t.x; p.hy = t.y; p.color = t.color; p.ember = t.ember;
+      p.wob = t.ember ? (t.halo ? 2 + Math.random() * 3 : 0.6 + Math.random() * 1.2) : 0.25; // idle drift radius
+      p.push = t.ember ? P.emberLightness : 1;
+    }
+
+    // Reuses existing particles: on resize/setText they fly to their new homes (morph).
+    function rebuild(initial) {
+      const targets = buildTargets();
+      const diag = Math.hypot(W, H);
+      while (particles.length < targets.length) {
+        // New particles start off-screen on a ring around the centre
+        const a = Math.random() * Math.PI * 2;
+        const d = cfg.effectMode === 'flythrough' ? diag * (1.15 + Math.random() * 0.85) : diag * (0.5 + Math.random() * 0.3);
+        particles.push(makeParticle(W / 2 + Math.cos(a) * d, H / 2 + Math.sin(a) * d));
+      }
+      particles.length = targets.length;
+      emberIdx = [];
+      for (let i = 0; i < targets.length; i++) {
+        const p = particles[i], t = targets[i];
+        assign(p, t);
+        if (t.ember && !t.halo) emberIdx.push(i);
+        if (initial) {
+          if (reduceMotion) { p.x = t.x; p.y = t.y; }
+          else {
+            p.delay = cfg.effectMode === 'random'
+              ? Math.random() * cfg.intro.sweep
+              : (t.x / W) * cfg.intro.sweep + Math.random() * cfg.intro.jitter;
+            p.curl = (Math.random() < 0.5 ? -1 : 1) * (cfg.effectMode === 'flythrough' ? cfg.intro.curl * 2.8 : cfg.intro.curl) * (0.5 + Math.random());
+          }
+        }
+      }
+      const n = reduceMotion ? 0 : Math.round(cfg.sparkCount * Math.min(1, W / 1440));
+      while (sparks.length < n) {
+        sparks.push({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1, ph: 0, ws: 1, cx: 0.5, cy: 0.5,
+                      wait: (initial ? 150 : 0) + Math.random() * 160 });
+      }
+      sparks.length = n;
+      wake();
+    }
+
+    function spawnSpark(s) {
+      if (!emberIdx.length) { s.wait = 30; return; }
+      const p = particles[emberIdx[(Math.random() * emberIdx.length) | 0]]; // born from an edge ember
+      s.x = p.x; s.y = p.y;
+      s.vx = (Math.random() - 0.5) * 0.6;
+      s.vy = -(0.3 + Math.random() * 1.1);
+      s.max = s.life = 50 + Math.random() * 120;
+      s.ph = Math.random() * 6.283; s.ws = 1 + Math.random() * 2;
+    }
+
+    // ---------- Physics ----------
+    // Cursor repulsion: push away along the cursor→particle direction, plus a
+    // perpendicular (swirl) component so the cloud curls like disturbed flame.
+    function repel(o, force, dt) {
+      const dx = o.x - mouse.x, dy = o.y - mouse.y, d2 = dx * dx + dy * dy;
+      if (d2 >= R2 || d2 < 1e-4) return;
+      const d = Math.sqrt(d2);
+      const f = 1 - d / R;                 // 1 at the cursor → 0 at the radius edge
+      const push = f * f * force * dt;     // quadratic falloff: soft boundary, strong centre
+      const nx = dx / d, ny = dy / d;      // unit vector pointing away from the cursor
+      o.vx += (nx - ny * P.swirl) * push;
+      o.vy += (ny + nx * P.swirl) * push;
+    }
+
+    // Adds a particle's line segment to its style bucket.
+    function streak(o, style) {
+      const path = paths[style] || (paths[style] = new Path2D());
+      const sp = Math.sqrt(o.vx * o.vx + o.vy * o.vy);
+      if (sp > 0.35) {
+        // Moving: tail trails behind along the velocity; faster = longer streak
+        const k = Math.min(P.maxStreak, sp * P.streak) / sp;
+        path.moveTo(o.x - o.vx * k, o.y - o.vy * k);
+        path.lineTo(o.x, o.y);
+      } else {
+        // Resting: a tiny fixed-angle sliver so the word reads as dust, not round dots
+        path.moveTo(o.x - o.cx, o.y - o.cy);
+        path.lineTo(o.x + o.cx, o.y + o.cy);
+      }
+    }
+
+    // ---------- Loop control: one place decides whether frames run ----------
+    // BATTERY: three states — running, idle (settled; loop fully stopped, 0 wakeups) and
+    // paused (tab hidden, window unfocused, or hero scrolled out of view). Any input,
+    // setText, resize or dim change calls wake().
+    function syncStill() { area.classList.toggle('pt-still', paused || idle); }
+    function start() {
+      if (raf || paused || idle || destroyed) return;
+      last = lastTick = performance.now();
+      raf = requestAnimationFrame(frame);
+    }
+    function stop() { cancelAnimationFrame(raf); raf = 0; clearTimeout(idleTimer); }
+    function wake() {
+      lastMovement = performance.now();
+      if (idle) { idle = false; clearTimeout(idleTimer); lastTick = performance.now(); syncStill(); }
+      start();
+    }
+    function setPause(reason, on) {
+      if (on) pauseReasons.add(reason); else pauseReasons.delete(reason);
+      const p = pauseReasons.size > 0;
+      if (p === paused) return;
+      paused = p; syncStill();
+      if (paused) stop(); else wake();
+    }
+    // BATTERY: once settled, stop requesting frames at all. With idleFps > 0, redraw on a slow timer.
+    function enterIdle() {
+      if (!idle) { idle = true; syncStill(); }
+      if (cfg.idleFps > 0 && !paused && !destroyed) {
+        idleTimer = setTimeout(() => { if (idle && !paused && !raf) raf = requestAnimationFrame(frame); }, 1000 / cfg.idleFps);
+      }
+    }
+    // Repaint once (e.g. after a resize cleared the canvases while paused).
+    function drawNow() { lastRender = 0; last = lastTick = performance.now(); frame(last); }
+
+    // BATTERY: adaptive quality. avgMs is the rolling time between vsync callbacks
+    // (≈16.7 on a healthy 60Hz screen, regardless of the 30fps cap).
+    function adapt(now) {
+      // Sustained > 22ms for 2s → this device can't hold 60fps: switch to the 30fps cap for the session.
+      if (avgMs > 22) {
+        if (!laggySince) laggySince = now;
+        if (!lowPower && !cfg.forceFullRate && now - laggySince > 2000) lowPower = true;
+      } else laggySince = 0;
+      // Sustained > 26ms for 2s → render particles at lower resolution (fewer pixels to fill).
+      if (avgMs > 26) {
+        fastSince = 0; if (!slowSince) slowSince = now;
+        if (fxScale > cfg.fxScaleMin && now - slowSince > 2000) { fxScale = cfg.fxScaleMin; scaleDrops++; sizeFx(); slowSince = 0; }
+      } else if (avgMs < 20) {
+        // Restore after 5s of healthy frames (< 20ms, i.e. on vsync). Only once: if it gets
+        // slow again, stay at the lower scale instead of ping-ponging.
+        slowSince = 0; if (!fastSince) fastSince = now;
+        if (fxScale < cfg.fxScale && scaleDrops < 2 && now - fastSince > 5000) { fxScale = cfg.fxScale; sizeFx(); fastSince = 0; }
+      } else slowSince = fastSince = 0;
+    }
+
+    // ---------- Step 4: animate ----------
+    function frame(now) {
+      raf = 0;
+      if (!idle) {
+        const interval = Math.min(100, (now - lastTick) || 16.7);
+        avgMs += (interval - avgMs) * 0.05;
+        adapt(now);
+      }
+      lastTick = now;
+
+      // BATTERY: 30fps cap on low-power devices — skip every other vsync. Physics uses dt,
+      // so motion speed is identical; only the number of drawn frames halves.
+      if (lowPower && !idle && now - lastRender < 1000 / cfg.lowPowerFps - 4) {
+        if (!paused) raf = requestAnimationFrame(frame);
+        return;
+      }
+      lastRender = now;
+      framesThisSecond++;
+
+      const elapsed = (now - last) || 16.7;
+      last = now;
+      const dt = Math.min(50, elapsed) / 16.667;   // 1.0 at 60fps → same motion on 30/60/120Hz
+      time += Math.min(250, elapsed) / 1000;
+
+      const fr = Math.pow(P.friction, dt);   // friction compounded over dt frames
+      const sf = Math.pow(0.985, dt);        // sparks: lighter air drag
+      R = Math.min(200, Math.max(70, fontSize * P.mouseRadius)); R2 = R * R;
+      const nearR2 = (R + 2) * (R + 2);
+      // BATTERY: a parked cursor keeps a perpetual swirl going (the swirl force never balances).
+      // After cursorRest ms without movement, release it so the word reforms and the loop can go idle.
+      if (mouse.active && now - lastPointer > cfg.cursorRest) mouse.active = false;
+      const F = P.mouseForce * (reduceMotion ? 0.4 : 1);
+      const maxV2 = P.maxSpeed * P.maxSpeed;
+      let moving = false;
+      paths.fill(null);
+
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        // 1) Home drifts in a tiny loop → the settled word shimmers instead of freezing
+        let hx = p.hx + Math.sin(time * p.ws + p.ph) * p.wob;
+        let hy = p.hy + Math.cos(time * p.ws * 0.8 + p.ph) * p.wob;
+        // Each study changes the home field rather than adding a second canvas or a costly filter.
+        const ox = hx - W / 2, oy = hy - H / 2, radius = Math.hypot(ox, oy) || 1;
+        const phase = time * (0.7 + p.ws * 0.35) + p.ph;
+        if (cfg.effectMode === 'aurora') { hx += Math.sin(phase + hy * 0.012) * 11; hy += Math.cos(phase + hx * 0.008) * 5; }
+        if (cfg.effectMode === 'vortex' || cfg.effectMode === 'orbit') {
+          const a = cfg.effectMode === 'vortex' ? 0.055 * Math.sin(time * 1.4 + radius * 0.006) : time * 0.22;
+          hx = W / 2 + ox * Math.cos(a) - oy * Math.sin(a); hy = H / 2 + ox * Math.sin(a) + oy * Math.cos(a);
+        }
+        if (cfg.effectMode === 'ripple') { const wave = Math.sin(radius * 0.045 - time * 4) * 8; hx += ox / radius * wave; hy += oy / radius * wave; }
+        if (cfg.effectMode === 'pulse') { const s = 1 + Math.sin(time * 2.2) * 0.035; hx = W / 2 + ox * s; hy = H / 2 + oy * s; }
+        if (cfg.effectMode === 'gravity') { hy += Math.sin(time * 1.5 + p.ph) * 3 + Math.min(18, radius * 0.018); }
+        if (cfg.effectMode === 'glitch') { hx += Math.sin(time * 13 + p.ph * 4) * (p.ember ? 5 : 1.5); hy += Math.cos(time * 17 + p.ph) * (p.ember ? 3 : 1); }
+        if (cfg.effectMode === 'spectral') { hx += Math.sin(phase) * 4; hy += Math.cos(phase * 1.3) * 4; }
+        if (cfg.effectMode === 'neon') { hx += Math.sin(time * 5 + hy * 0.02) * 3; hy += Math.cos(time * 4 + hx * 0.02) * 3; }
+        if (cfg.effectMode === 'rotate') {
+          const a = time * 0.42, c = Math.cos(a), s = Math.sin(a);
+          hx = W / 2 + ox * c - oy * s; hy = H / 2 + ox * s + oy * c;
+        }
+        if (cfg.effectMode === 'cinematic') {
+          const cam = 1 + Math.sin(time * 0.55) * 0.06, driftX = Math.sin(time * 0.42) * W * 0.035, driftY = Math.cos(time * 0.33) * H * 0.025;
+          hx = W / 2 + ox * cam + driftX; hy = H / 2 + oy * cam + driftY;
+        }
+        if (cfg.effectMode === 'comet') { hx += Math.sin(time * 0.9) * 7; hy += Math.cos(time * 0.9) * 2; }
+        if (cfg.effectMode === 'frost') { hx += Math.sin(p.ph * 9) * 1.8; hy += Math.cos(p.ph * 7) * 1.8; }
+
+        // 2) Spring (Hooke's law): acceleration = distance-from-home × stiffness
+        if (p.delay > 0) {
+          p.delay -= dt;
+          if (p.delay <= 0 && p.curl) {
+            // Launch kick perpendicular to the flight path → curved, vortex-like fly-in
+            const dx = p.hx - p.x, dy = p.hy - p.y, d = Math.hypot(dx, dy) || 1;
+            p.vx += (-dy / d) * p.curl; p.vy += (dx / d) * p.curl; p.curl = 0;
+          }
+        } else {
+          p.vx += (hx - p.x) * p.k * dt;
+          p.vy += (hy - p.y) * p.k * dt;
+        }
+
+        // 3) Cursor repulsion (embers are lighter, so they scatter further)
+        if (mouse.active) repel(p, F * p.push, dt);
+
+        // 4) Friction bleeds off velocity → particles settle instead of oscillating forever
+        p.vx *= fr; p.vy *= fr;
+        const v2 = p.vx * p.vx + p.vy * p.vy;
+        if (v2 > maxV2) { const s = P.maxSpeed / Math.sqrt(v2); p.vx *= s; p.vy *= s; }
+
+        // 5) Integrate position
+        p.x += p.vx * dt; p.y += p.vy * dt;
+
+        // Idle detection (BATTERY): still travelling = waiting to launch, faster than 0.3px/frame,
+        // or away from home by more than its wobble — unless it is being held off by a resting cursor.
+        // Wobble itself (≤ 0.2px/frame) and sparks do not count, so the settled word can go idle.
+        if (!moving) {
+          if (p.delay > 0 || v2 > 0.09) moving = true;
+          else {
+            const ex = p.x - p.hx, ey = p.y - p.hy, lim = p.wob * 1.42 + 1.25;   // wobble loop reaches wob·√2
+            if (ex * ex + ey * ey > lim * lim) {
+              const mx = p.x - mouse.x, my = p.y - mouse.y;
+              if (!mouse.active || mx * mx + my * my > nearR2) moving = true;
+            }
+          }
+        }
+
+        // 6) Flicker → brightness level → bucket
+        const b = p.ember
+          ? 0.5 + 0.32 * Math.sin(time * p.ws * 3.1 + p.ph) + 0.18 * Math.sin(time * p.ws * 7.3 + p.ph * 2)
+          : 0.8 + 0.2 * Math.sin(time * p.ws * 1.5 + p.ph);
+        streak(p, p.color * 3 + (b >= 0.667 ? 2 : b >= 0.333 ? 1 : 0));
+      }
+
+      // Rising sparks: buoyancy pulls up, sine turbulence flutters sideways, fade by life
+      for (const s of sparks) {
+        if (s.wait > 0) { s.wait -= dt; if (s.wait <= 0) spawnSpark(s); continue; }
+        s.life -= dt;
+        if (s.life <= 0) { s.wait = Math.random() * 60; continue; }
+        s.vx += Math.sin(time * s.ws * 2 + s.ph) * 0.03 * dt;
+        s.vy -= 0.015 * dt;
+        if (mouse.active) repel(s, F * 1.6, dt);
+        s.vx *= sf; s.vy *= sf;
+        s.x += s.vx * dt; s.y += s.vy * dt;
+        const f = s.life / s.max;
+        streak(s, C.spark * 3 + (f > 0.6 ? 2 : f > 0.3 ? 1 : 0));
+      }
+
+      // Render: additive blending, so overlapping light builds a hot white core.
+      // The transform maps CSS px → the reduced-resolution canvas (lineWidth scales with it).
+      const S = fxScale * DPR;
+      ctx.setTransform(S, 0, 0, S, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+      for (let i = 0; i < STYLES.length; i++) {
+        if (!paths[i]) continue;
+        ctx.strokeStyle = STYLES[i].stroke;
+        ctx.lineWidth = STYLES[i].width * lineComp;
+        ctx.stroke(paths[i]);
+      }
+
+      // Bloom pass: quarter-res copy, blurred inside the small canvas (see bakeBloom).
+      // Pass 1 = wide glow; pass 2 = tight halo (what shadowBlur used to give), added on top.
+      // Both run on 1/16 of the screen's pixels, so together they cost far less than one shadowBlur.
+      glowCtx.globalCompositeOperation = 'source-over';
+      glowCtx.globalAlpha = 1;
+      glowCtx.clearRect(0, 0, glow.width, glow.height);
+      if (bakeBloom) glowCtx.filter = wideFilter;
+      glowCtx.drawImage(fx, 0, 0, glow.width, glow.height);
+      if (bakeBloom && B.haloAlpha > 0) {
+        glowCtx.filter = haloFilter;
+        glowCtx.globalCompositeOperation = 'lighter';
+        glowCtx.globalAlpha = B.haloAlpha;
+        glowCtx.drawImage(fx, 0, 0, glow.width, glow.height);
+      }
+
+      // Schedule the next frame, or go idle once nothing has moved for idleDelay ms
+      if (moving) lastMovement = now;
+      if (now - lastMovement > cfg.idleDelay) enterIdle();
+      else {
+        if (idle) { idle = false; syncStill(); }
+        if (!paused) raf = requestAnimationFrame(frame);
+      }
+    }
+
+    // ---------- Input, visibility, resize ----------
+    const onMove = e => {
+      const r = area.getBoundingClientRect();
+      mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.active = true;
+      lastPointer = performance.now();
+      setPause('blur', false);   // pointer activity means the user is looking, even without window focus
+      wake();
+    };
+    const onLeave = () => { mouse.active = false; wake(); };   // let scattered particles drift home
+    const onUp = e => { if (e.pointerType !== 'mouse') { mouse.active = false; wake(); } }; // finger lifted
+    // BATTERY: stop all drawing when the tab is hidden, the window loses focus, or the hero is off-screen.
+    const onVis = () => setPause('hidden', document.hidden);
+    const onWinBlur = () => { mouse.active = false; setPause('blur', true); };
+    const onWinFocus = () => setPause('blur', false);
+    const onResize = () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (area.clientWidth === W && area.clientHeight === H) return;
+        resize(); rebuild(false);      // rebuild wakes the loop
+        if (paused) drawNow();         // resizing clears the canvases; repaint once even while paused
+      }, 120);
+    };
+    area.addEventListener('pointermove', onMove);
+    area.addEventListener('pointerdown', onMove);
+    area.addEventListener('pointerup', onUp);
+    area.addEventListener('pointerleave', onLeave);
+    area.addEventListener('pointercancel', onLeave);
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('blur', onWinBlur);
+    window.addEventListener('focus', onWinFocus);
+    const ro = new ResizeObserver(onResize);
+    ro.observe(area);
+    const io = 'IntersectionObserver' in window
+      ? new IntersectionObserver(es => setPause('offscreen', !es[es.length - 1].isIntersecting))
+      : null;
+    if (io) io.observe(area);
+
+    function setImage(url) {
+      if (!url) { bgImg = null; drawBackground(); return Promise.resolve(); }
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => { bgImg = img; drawBackground(); resolve(); };
+        img.onerror = reject;
+        img.src = url;
+      });
+    }
+
+    // ---------- Dev FPS counter (updates once per second; only exists when showFps) ----------
+    let fpsEl = null, fpsTimer = 0;
+    if (cfg.showFps) {
+      fpsEl = document.createElement('div');
+      fpsEl.className = 'pt-fps';
+      document.body.appendChild(fpsEl);
+      const tick = () => {
+        const mode = paused ? ' | paused' : idle ? ' | idle' : lowPower ? ` | cap ${cfg.lowPowerFps}` : '';
+        fpsEl.textContent = `FPS: ${framesThisSecond} | ms: ${avgMs.toFixed(1)} | scale: ${fxScale}${mode}`;
+        framesThisSecond = 0;
+      };
+      tick();
+      fpsTimer = setInterval(tick, 1000);
+    }
+
+    // ---------- Start ----------
+    if (document.hidden) { pauseReasons.add('hidden'); paused = true; syncStill(); }
+    resize();
+    rebuild(true);   // also starts the loop (wake)
+    if (cfg.image) setImage(cfg.image).catch(() => {});
+    if (document.fonts && document.fonts.status !== 'loaded') document.fonts.ready.then(() => rebuild(false));
+
+    return {
+      setText(t) { cfg.text = String(t); rebuild(false); },
+      setEffect(name) { cfg.effectMode = String(name); cfg.intro.sweep = cfg.effectMode === 'typewriter' ? 110 : Math.min(cfg.intro.sweep, 80); rebuild(true); },
+      setReveal(v) { cfg.intro.sweep = Math.max(8, Math.min(110, +v || 50)); rebuild(true); },
+      setPosition(x, y) { cfg.textOffsetX = Math.max(-35, Math.min(35, +x || 0)); cfg.textOffsetY = Math.max(-35, Math.min(35, +y || 0)); rebuild(false); },
+      setImage,
+      setImageDim(v) { cfg.imageDim = Math.min(1, Math.max(0, +v)); drawBackground(); wake(); },
+      destroy() {
+        destroyed = true;
+        stop(); clearTimeout(resizeTimer); clearInterval(fpsTimer);
+        ro.disconnect(); if (io) io.disconnect();
+        area.removeEventListener('pointermove', onMove);
+        area.removeEventListener('pointerdown', onMove);
+        area.removeEventListener('pointerup', onUp);
+        area.removeEventListener('pointerleave', onLeave);
+        area.removeEventListener('pointercancel', onLeave);
+        document.removeEventListener('visibilitychange', onVis);
+        window.removeEventListener('blur', onWinBlur);
+        window.removeEventListener('focus', onWinFocus);
+        area.classList.remove('pt-still');
+        if (fpsEl) fpsEl.remove();
+        [bg, fx, glow].forEach(c => c.remove());
+      },
+    };
+  }
+
+  return { init };
+})();
+
+/* ---------- Page glue: settings panel + choices remembered in this browser ---------- */
+const store = {
+  get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set: (k, v) => {
+    try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); return true; }
+    catch (e) { return false; }
+  },
+};
+const EFFECTS = [
+  ['ember', 'Ember'], ['aurora', 'Aurora'], ['vortex', 'Vortex'], ['ripple', 'Ripple'],
+  ['neon', 'Neon'], ['typewriter', 'Typewriter'], ['random', 'Random reveal'], ['flythrough', 'Fly-through'],
+  ['rotate', 'Rotate around'], ['cinematic', 'Cinematic camera'], ['glitch', 'Glitch'], ['orbit', 'Orbit'],
+  ['gravity', 'Gravity'], ['frost', 'Frost'], ['pulse', 'Pulse'], ['spectral', 'Spectral'],
+];
+const saved = {
+  name: store.get('pt-name') || 'PRANOY',
+  image: store.get('pt-image'),
+  dim: parseFloat(store.get('pt-dim')) || 0.7,
+  effect: store.get('pt-effect') || 'ember',
+  reveal: parseFloat(store.get('pt-reveal')) || 50,
+  x: parseFloat(store.get('pt-pos-x')) || 0,
+  y: parseFloat(store.get('pt-pos-y')) || 0,
+};
+// Dev flags: ?fps=1 shows the counter; ?fps=60 also disables the 30fps cap.
+// Hash versions (#fps, #fps-60) for hosts that strip query strings.
+const fpsParam = new URLSearchParams(location.search).get('fps');
+const fpsHash = /^#fps(-60)?$/.exec(location.hash);
+const hero = ParticleText.init({
+  area: '#hero', text: saved.name, image: saved.image, imageDim: saved.dim,
+  effectMode: saved.effect, textOffsetX: saved.x, textOffsetY: saved.y,
+  intro: { sweep: saved.reveal },
+  showFps: fpsParam !== null || !!fpsHash,
+  forceFullRate: fpsParam === '60' || !!(fpsHash && fpsHash[1]),
+});
+
+const $ = id => document.getElementById(id);
+const toggle = document.querySelector('.pt-toggle'), panel = $('pt-panel'), note = $('pt-note');
+const nameIn = $('pt-name'), dimIn = $('pt-dim'), fileIn = $('pt-file');
+const revealIn = $('pt-reveal'), revealOut = $('pt-reveal-out');
+const posX = $('pt-pos-x'), posY = $('pt-pos-y'), posXOut = $('pt-pos-x-out'), posYOut = $('pt-pos-y-out');
+const effectGrid = $('pt-effects'), dragBtn = $('pt-drag-mode'), audioFile = $('pt-audio-file');
+const heading = document.querySelector('#hero h1');
+nameIn.value = saved.name; dimIn.value = saved.dim; revealIn.value = saved.reveal;
+posX.value = saved.x; posY.value = saved.y; heading.textContent = saved.name;
+revealOut.value = saved.reveal; posXOut.value = `${saved.x}%`; posYOut.value = `${saved.y}%`;
+
+EFFECTS.forEach(([id, label]) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'pt-effect'; b.dataset.effect = id; b.textContent = label;
+  b.setAttribute('aria-pressed', String(id === saved.effect));
+  b.addEventListener('click', () => {
+    hero.setEffect(id); store.set('pt-effect', id);
+    effectGrid.querySelectorAll('.pt-effect').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  });
+  effectGrid.appendChild(b);
+});
+
+const setPanel = open => { panel.hidden = !open; toggle.setAttribute('aria-expanded', String(open)); };
+toggle.addEventListener('click', () => { setPanel(panel.hidden); if (!panel.hidden) nameIn.focus(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !panel.hidden) { setPanel(false); toggle.focus(); } });
+
+/* ---------- Multiple editable text layers ---------- */
+const multiLayer = $('pt-multi-layer'), multiControls = $('pt-multi-controls');
+let multiTexts = (() => { try { return JSON.parse(store.get('pt-multi') || '[]'); } catch (e) { return []; } })();
+const saveMulti = () => store.set('pt-multi', JSON.stringify(multiTexts));
+const renderMulti = () => {
+  multiLayer.replaceChildren(); multiControls.replaceChildren();
+  multiTexts.forEach((item, index) => {
+    const el = document.createElement('div'); el.className = 'pt-multi-text'; el.textContent = item.text || 'TEXT';
+    el.style.left = `${item.x}%`; el.style.top = `${item.y}%`; el.dataset.index = index;
+    let drag = null;
+    el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, ox: item.x, oy: item.y }; el.setPointerCapture?.(e.pointerId); });
+    el.addEventListener('pointermove', e => { if (!drag) return; item.x = Math.max(4, Math.min(96, drag.ox + (e.clientX - drag.x) / innerWidth * 100)); item.y = Math.max(4, Math.min(96, drag.oy + (e.clientY - drag.y) / innerHeight * 100)); el.style.left = `${item.x}%`; el.style.top = `${item.y}%`; saveMulti(); });
+    el.addEventListener('pointerup', () => { drag = null; }); el.addEventListener('pointercancel', () => { drag = null; });
+    multiLayer.appendChild(el);
+    const row = document.createElement('div'); row.className = 'pt-multi-row';
+    const input = document.createElement('input'); input.type = 'text'; input.maxLength = 28; input.value = item.text || '';
+    input.setAttribute('aria-label', `Text layer ${index + 1}`);
+    input.addEventListener('input', () => { item.text = input.value; el.textContent = item.text || 'TEXT'; saveMulti(); });
+    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Remove'; remove.title = 'Remove text layer';
+    remove.addEventListener('click', () => { multiTexts.splice(index, 1); saveMulti(); renderMulti(); });
+    row.append(input, remove); multiControls.appendChild(row);
+  });
+};
+$('pt-add-text').addEventListener('click', () => { multiTexts.push({ text: 'NEW TEXT', x: 50, y: 78 }); saveMulti(); renderMulti(); });
+renderMulti();
+
+/* ---------- Local video atmosphere ---------- */
+const videoEl = $('pt-video'), videoFile = $('pt-video-file');
+videoFile.addEventListener('change', () => {
+  const file = videoFile.files[0]; if (!file) return;
+  if (videoEl.src) URL.revokeObjectURL(videoEl.src);
+  videoEl.src = URL.createObjectURL(file); videoEl.classList.add('pt-video-on');
+  videoEl.play().catch(() => {}); note.textContent = `${file.name} attached as the background atmosphere.`;
+});
+$('pt-clear-video').addEventListener('click', () => { if (videoEl.src) URL.revokeObjectURL(videoEl.src); videoEl.pause(); videoEl.removeAttribute('src'); videoEl.load(); videoEl.classList.remove('pt-video-on'); note.textContent = ''; });
+
+// Name: particles morph 300ms after you stop typing; saved for next visit
+let nameTimer;
+nameIn.addEventListener('input', () => {
+  clearTimeout(nameTimer);
+  nameTimer = setTimeout(() => {
+    const v = nameIn.value.trim();
+    if (!v) return;
+    hero.setText(v); heading.textContent = v; store.set('pt-name', v);
+  }, 300);
+});
+
+dimIn.addEventListener('input', () => { hero.setImageDim(dimIn.value); store.set('pt-dim', dimIn.value); });
+revealIn.addEventListener('input', () => { revealOut.value = revealIn.value; hero.setReveal(revealIn.value); store.set('pt-reveal', revealIn.value); });
+
+const syncPosition = () => {
+  posXOut.value = `${posX.value}%`; posYOut.value = `${posY.value}%`;
+  hero.setPosition(posX.value, posY.value); store.set('pt-pos-x', posX.value); store.set('pt-pos-y', posY.value);
+};
+posX.addEventListener('input', syncPosition); posY.addEventListener('input', syncPosition);
+
+let dragMode = false, dragging = false, dragStart = null;
+dragBtn.addEventListener('click', () => {
+  dragMode = !dragMode; dragBtn.textContent = dragMode ? 'Drag mode active' : 'Enable drag mode';
+  document.body.style.cursor = dragMode ? 'move' : '';
+});
+const heroArea = document.querySelector('#hero');
+heroArea.addEventListener('pointerdown', e => {
+  if (!dragMode) return;
+  dragging = true; dragStart = { x: e.clientX, y: e.clientY, px: +posX.value, py: +posY.value };
+  heroArea.setPointerCapture?.(e.pointerId);
+});
+heroArea.addEventListener('pointermove', e => {
+  if (!dragging || !dragStart) return;
+  const nextX = Math.max(-35, Math.min(35, dragStart.px + (e.clientX - dragStart.x) / innerWidth * 100));
+  const nextY = Math.max(-35, Math.min(35, dragStart.py + (e.clientY - dragStart.y) / innerHeight * 100));
+  posX.value = nextX; posY.value = nextY; syncPosition();
+});
+const stopDrag = () => { dragging = false; dragStart = null; };
+heroArea.addEventListener('pointerup', stopDrag); heroArea.addEventListener('pointercancel', stopDrag);
+
+$('pt-pick').addEventListener('click', () => fileIn.click());
+$('pt-clear').addEventListener('click', () => { hero.setImage(null); store.set('pt-image', null); note.textContent = ''; });
+
+// Photo: shrink to max 1600px JPEG → loads fast and fits browser storage
+fileIn.addEventListener('change', () => {
+  const file = fileIn.files[0];
+  fileIn.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      const url = c.toDataURL('image/jpeg', 0.82);
+      hero.setImage(url);
+      note.textContent = store.set('pt-image', url) ? '' : 'Photo is too large to save. It will reset when you reload.';
+    };
+    img.onerror = () => { note.textContent = 'That file could not be read as an image. Try a JPG or PNG.'; };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+// Local audio stays in this browser session; it is never uploaded to a server.
+audioFile.addEventListener('change', () => {
+  const file = audioFile.files[0];
+  if (!file) return;
+  const audio = $('pt-audio'), musicBtn = document.querySelector('.pt-music');
+  audio.src = URL.createObjectURL(file); audio.load(); musicBtn.hidden = false;
+  note.textContent = `${file.name} attached. Tap the sound button to play.`;
+});
+
+/* ---------- Background music (AUDIO_SRC at the top of this script) ---------- */
+(() => {
+  const btn = document.querySelector('.pt-music');
+  const audio = document.getElementById('pt-audio');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { btn.hidden = true; return; }   // reduced motion → always silent
+  if (AUDIO_SRC) audio.src = AUDIO_SRC;
+  btn.hidden = !AUDIO_SRC;
+
+  const VOLUME = 0.25;
+  let wantOn = store.get('pt-muted') === 'false';           // default: muted
+  let fadeRaf = 0;
+  const show = () => btn.setAttribute('aria-pressed', String(wantOn));   // CSS swaps the two SVG icons
+
+  // Volume ramp on requestAnimationFrame; `done` runs when the ramp finishes.
+  const fade = (to, ms, done) => {
+    cancelAnimationFrame(fadeRaf);
+    const from = audio.volume, t0 = performance.now();
+    const step = now => {
+      const k = Math.min(1, (now - t0) / ms);
+      audio.volume = from + (to - from) * k;
+      if (k < 1) fadeRaf = requestAnimationFrame(step); else if (done) done();
+    };
+    fadeRaf = requestAnimationFrame(step);
+  };
+
+  // Browsers block autoplay. If the saved choice is "on", start on the first real user gesture.
+  // pointerdown counts as a gesture only for mouse; touch needs pointerup; Escape does not count.
+  const GESTURES = ['pointerdown', 'pointerup', 'keydown'];
+  const onGesture = e => {
+    if (btn.contains(e.target) || !wantOn || !audio.paused) return;   // the button handles its own clicks
+    if (e.type === 'pointerdown' && e.pointerType !== 'mouse') return;
+    if (e.type === 'pointerup' && e.pointerType === 'mouse') return;
+    if (e.type === 'keydown' && e.key === 'Escape') return;
+    play().catch(() => {});
+  };
+  const disarm = () => GESTURES.forEach(t => document.removeEventListener(t, onGesture, true));
+  const play = () => {
+    audio.volume = 0;
+    return Promise.resolve(audio.play()).then(() => { disarm(); fade(VOLUME, 1500); });
+  };
+  const stop = () => fade(0, 500, () => audio.pause());
+  if (wantOn) GESTURES.forEach(t => document.addEventListener(t, onGesture, true));
+
+  btn.addEventListener('click', () => {
+    // Saved as "on" but not playing yet (blocked autoplay, or paused with the tab) → just start.
+    if (wantOn && audio.paused) { play().catch(() => {}); return; }
+    wantOn = !wantOn;
+    store.set('pt-muted', String(!wantOn));
+    show();
+    if (wantOn) play().catch(() => { wantOn = false; store.set('pt-muted', 'true'); show(); });
+    else stop();
+  });
+
+  // Tab hidden → pause right away. No auto-resume on return: the user clicks again.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && !audio.paused) { cancelAnimationFrame(fadeRaf); audio.pause(); }
+  });
+  audio.addEventListener('error', () => { btn.hidden = true; });   // bad URL → hide the control
+  show();
+})();
+</script>
+</body>
+</html>
+<!--
+VERIFICATION CHECKLIST
+□ chrome://gpu shows "Canvas: Hardware accelerated"
+□ ?fps=1 shows FPS stable at 60 (desktop) or 30 (mobile) while interacting, scale: 0.6 or higher
+  (settled word shows "FPS: 0 | idle"; use #fps where query strings are stripped)
+□ Chrome Task Manager → GPU % for this tab stays under 15%
+□ Battery drops less than 1.5% per minute with the tab focused
+□ Settled word (no mouse) → GPU % drops to near 0%
+□ Music button appears only when AUDIO_SRC is set
+□ Music does not autoplay on page load
+□ prefers-reduced-motion → music button hidden, animation static
+-->
