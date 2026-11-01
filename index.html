@@ -945,7 +945,7 @@ const saved = {
 const fpsParam = new URLSearchParams(location.search).get('fps');
 const fpsHash = /^#fps(-60)?$/.exec(location.hash);
 const hero = ParticleText.init({
-  area: '#hero', text: saved.name, image: saved.image, imageDim: saved.dim,
+  area: '#hero', text: '', image: saved.image, imageDim: saved.dim,
   effectMode: saved.effect, textOffsetX: saved.x, textOffsetY: saved.y, textScale: saved.scale / 100,
   intro: { sweep: saved.reveal },
   showFps: fpsParam !== null || !!fpsHash,
@@ -974,8 +974,8 @@ const mediaPut = async (key, file) => { try { const db = await mediaOpen(); if (
 const mediaGet = async key => { try { const db = await mediaOpen(); if (!db) return null; return await new Promise((resolve, reject) => { const r = db.transaction('files').objectStore('files').get(key); r.onsuccess = () => resolve(r.result || null); r.onerror = () => reject(r.error); }); } catch (e) { return null; } };
 let mediaInfo = (() => { try { return JSON.parse(store.get('pt-media-info') || '{}'); } catch (e) { return {}; } })();
 const saveMediaInfo = () => store.set('pt-media-info', JSON.stringify(mediaInfo));
-nameIn.value = saved.name; dimIn.value = saved.dim; revealIn.value = saved.reveal; mainSizeIn.value = saved.scale; mainSizeOut.value = `${saved.scale}%`;
-posX.value = saved.x; posY.value = saved.y; heading.textContent = saved.name;
+dimIn.value = saved.dim; revealIn.value = saved.reveal; mainSizeIn.value = saved.scale; mainSizeOut.value = `${saved.scale}%`;
+posX.value = saved.x; posY.value = saved.y;
 revealOut.value = saved.reveal; posXOut.value = `${saved.x}%`; posYOut.value = `${saved.y}%`;
 
 EFFECTS.forEach(([id, label]) => {
@@ -1041,7 +1041,6 @@ nameIn.addEventListener('input', () => {
   clearTimeout(nameTimer);
   nameTimer = setTimeout(() => {
     const v = nameIn.value.trim();
-    if (!v) return;
     hero.setText(v); heading.textContent = v; store.set('pt-name', v);
   }, 300);
 });
